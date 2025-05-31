@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer les relais USB",
+        "description": "Entrez le port série et le nombre de relais.",
+        "data": {
+          "port": "Port série (ex: /dev/ttyUSB0)",
+          "relay_count": "Nombre de relais"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "domain": "usb_relay",
+  "name": "USB Relay",
+  "version": "1.0.0",
+  "documentation": "https://github.com/globoudou/home-assistant-usb-relay",
+  "requirements": ["pyserial"],
+  "dependencies": [],
+  "codeowners": ["@globoudou"],
+  "config_flow": true
+}

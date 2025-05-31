@@ -1,0 +1,8 @@
+{
+  "name": "USB Relay",
+  "content_in_root": false,
+  "domains": ["usb_relay"],
+  "country": "FR",
+  "homeassistant": "2023.0.0",
+  "iot_class": "local_polling"
+}
