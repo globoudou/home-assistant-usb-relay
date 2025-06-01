@@ -1,6 +1,8 @@
 # USB Relay for Home Assistant
 
 Custom integration for controlling USB relay modules (CH340) via Home Assistant.
+This cheap USB board embbeded 1 to 8 relay, controlled by a simple serial protocol.
+USB to serial is done with CH340, operating at 9600/8N1.
 
 ![Alt text](Images/relayboard.png)
 
@@ -16,6 +18,7 @@ Custom integration for controlling USB relay modules (CH340) via Home Assistant.
 
 ## Protocol
 
+Simple send hex bytes over serial port :
 - Read state: `0xFF` → returns n bytes (0 or 1).
 - Change state: `0xA0 relay_id state checksum`
 
