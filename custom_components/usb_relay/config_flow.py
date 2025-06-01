@@ -1,3 +1,32 @@
+import logging
+import serial
+import serial.tools.list_ports
+from homeassistant import config_entries
+import voluptuous as vol
+
+from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
+
+def detect_usb_relays():
+    found = []
+    ports = serial.tools.list_ports.comports()
+
+    for port_info in ports:
+        try:
+            with serial.Serial(port_info.device, 9600, timeout=0.5) as ser:
+                ser.write(bytes([0xFF]))
+                response = ser.read(8)
+
+                if 1 <= len(response) <= 8 and all(b in (0, 1) for b in response):
+                    _LOGGER.debug("USB relay detected on %s with %d channels", port_info.device, len(response))
+                    found.append((port_info.device, len(response)))
+        except Exception as e:
+            _LOGGER.debug("Failed to probe %s: %s", port_info.device, e)
+            continue
+
+    return found
+
 class USBRelayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -6,7 +35,7 @@ class USBRelayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not ports:
             return self.async_abort(reason="no_devices_found")
 
-        self.detected_ports = {p[0]: p[1] for p in ports}  # stocke {port: relay_count}
+        self.detected_ports = {p[0]: p[1] for p in ports}
         return await self.async_step_select_port()
 
     async def async_step_select_port(self, user_input=None):
