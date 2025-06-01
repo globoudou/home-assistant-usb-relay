@@ -2,6 +2,8 @@
 
 Custom integration for controlling USB relay modules (CH340) via Home Assistant.
 
+![Alt text](images/relayboard.png)
+
 ## Installation via HACS
 
 1. Add this repository in HACS > Integrations > Custom Repositories:
