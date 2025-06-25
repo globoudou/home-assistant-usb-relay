@@ -1,12 +1,14 @@
 from __future__ import annotations
 import logging
+import os
+import serial.tools.list_ports
+
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.typing import ConfigType
+
 from .const import DOMAIN
 from .coordinator import USBRelayCoordinator
-import os
-import serial.tools.list_ports
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,10 +28,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    resolved_port = resolve_by_id_path(entry.data["port"])
-    entry.data["port"] = resolved_port
+    # ✅ Copier les données (entry.data est en lecture seule)
+    data = dict(entry.data)
+    data["port"] = resolve_by_id_path(data["port"])
 
-    coordinator = USBRelayCoordinator(hass, entry.data)
+    coordinator = USBRelayCoordinator(hass, data)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
