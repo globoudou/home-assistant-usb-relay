@@ -3,10 +3,23 @@ import serial
 import serial.tools.list_ports
 from homeassistant import config_entries
 import voluptuous as vol
+import os
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+def resolve_by_id(port: str) -> str:
+    """Retourne le chemin /dev/serial/by-id/... correspondant si disponible."""
+    by_id_path = "/dev/serial/by-id"
+    if not os.path.exists(by_id_path):
+        return port
+
+    for entry in os.listdir(by_id_path):
+        full_path = os.path.join(by_id_path, entry)
+        if os.path.realpath(full_path) == os.path.realpath(port):
+            return full_path
+    return port
 
 def detect_usb_relays():
     found = []
@@ -19,8 +32,9 @@ def detect_usb_relays():
                 response = ser.read(8)
 
                 if 1 <= len(response) <= 8 and all(b in (0, 1) for b in response):
-                    _LOGGER.debug("USB relay detected on %s with %d channels", port_info.device, len(response))
-                    found.append((port_info.device, len(response)))
+                    id_path = resolve_by_id(port_info.device)
+                    _LOGGER.debug("USB relay detected on %s (%s) with %d channels", port_info.device, id_path, len(response))
+                    found.append((id_path, len(response)))
         except Exception as e:
             _LOGGER.debug("Failed to probe %s: %s", port_info.device, e)
             continue
