@@ -1,6 +1,10 @@
 {
   "domain": "usb_relay",
   "name": "USB Relay",
+  "categories": [
+    "diy_makers.boards_hardware",
+    "plugs_switches"
+  ],
   "codeowners": [
     "@globoudou"
   ],
