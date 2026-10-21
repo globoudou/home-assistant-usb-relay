@@ -1,13 +1,30 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Configurer les relais USB",
-        "description": "Entrez le port série et le nombre de relais.",
+      "select_port": {
+        "title": "Choisir la carte relais",
+        "description": "Cartes relais détectées sur les ports série.",
         "data": {
-          "port": "Port série (ex: /dev/ttyUSB0)",
+          "port": "Port série"
+        }
+      },
+      "confirm": {
+        "title": "Nombre de relais",
+        "description": "Carte sur {port}. Confirmez le nombre de relais.",
+        "data": {
           "relay_count": "Nombre de relais"
         }
+      }
+    },
+    "abort": {
+      "already_configured": "Cette carte relais est déjà configurée.",
+      "no_devices_found": "Aucune carte relais USB trouvée sur les ports série."
+    }
+  },
+  "entity": {
+    "switch": {
+      "relay": {
+        "name": "Relais {index}"
       }
     }
   }

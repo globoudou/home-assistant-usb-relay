@@ -1,26 +1,57 @@
+<img src="custom_components/usb_relay/brand/icon.png" width="96" align="right">
+
 # USB Relay for Home Assistant
 
-Custom integration for controlling USB relay modules (CH340) via Home Assistant.
-This cheap USB board embbeded 1 to 8 relay, controlled by a simple serial protocol.
-USB to serial is done with CH340, operating at 9600/8N1.
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![Validate](https://github.com/globoudou/home-assistant-usb-relay/actions/workflows/validate.yml/badge.svg)](https://github.com/globoudou/home-assistant-usb-relay/actions/workflows/validate.yml)
 
-![Alt text](Images/relayboard.png)
+Custom integration for controlling cheap USB relay boards (1 to 8 relays) from Home Assistant.
+The board uses a CH340 USB-to-serial chip at 9600 baud, 8N1, with a simple serial protocol.
 
-## Installation via HACS
+![USB relay board](Images/relayboard.png)
 
-1. Add this repository in HACS > Integrations > Custom Repositories:
-   - URL: `https://github.com/globoudou/home-assistant-usb-relay`
-   - Type: Integration
-2. Install "USB Relay".
+## Features
+
+- Automatic detection of relay boards on the serial ports, with the number of relays.
+- One `switch` entity per relay, grouped under a single device.
+- Uses the stable `/dev/serial/by-id/...` path when available, so the board survives USB re-enumeration.
+
+## Requirements
+
+Home Assistant 2026.11 or later.
+
+## Installation
+
+### HACS
+
+1. In HACS, open the ⋮ menu → **Custom repositories**, add `https://github.com/globoudou/home-assistant-usb-relay` with the **Integration** type.
+2. Install **USB Relay**.
 3. Restart Home Assistant.
-4. Add the integration via Configuration > Devices & Services > Add Integration > USB Relay.
-5. Choose the detected USB port and confirm number of relays.
+
+### Manual
+
+Copy `custom_components/usb_relay/` into `config/custom_components/`, then restart Home Assistant.
+
+## Configuration
+
+1. Plug in the relay board.
+2. Go to **Settings → Devices & services → Add integration → USB Relay**.
+3. Pick the detected serial port and confirm the number of relays.
 
 ## Protocol
 
-Simple send hex bytes over serial port :
-- Read state: `0xFF` → returns n bytes (0 or 1).
-- Change state: `0xA0 relay_id state checksum` ie `0xA0 0x02 0x01 0xA3` to switch relay 2 to ON
+Hex bytes sent over the serial port:
+
+- Read state: `0xFF` → the board answers with one byte per relay (`0x00` off, `0x01` on).
+- Switch a relay: `0xA0 relay state checksum`, with relays numbered from 1 and `checksum = (0xA0 + relay + state) & 0xFF`.
+  For example `0xA0 0x02 0x01 0xA3` turns relay 2 on.
+
+## Development
+
+```bash
+pip install pytest-homeassistant-custom-component pyserial
+pytest
+```
 
 ## License
 

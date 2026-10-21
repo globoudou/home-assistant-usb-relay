@@ -1,65 +1,80 @@
+"""Coordinator for the USB Relay integration."""
+
+from __future__ import annotations
+
 import asyncio
 import logging
+
 import serial
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .const import DEFAULT_BAUDRATE, DOMAIN, SERIAL_TIMEOUT
+from .helpers import READ_STATE_COMMAND, build_switch_command
 
 _LOGGER = logging.getLogger(__name__)
 
-class USBRelayCoordinator(DataUpdateCoordinator[list[int]]):
-    def __init__(self, hass, config):
-        super().__init__(hass, _LOGGER, name="usb_relay", update_interval=None)
-        self.hass = hass
-        self.port = config["port"]
-        self.relay_count = int(config["relay_count"])
-        self._lock = asyncio.Lock()  # 🔒 verrou async pour séquencer lecture/écriture
+type USBRelayConfigEntry = ConfigEntry[USBRelayCoordinator]
 
-    async def _async_update_data(self):
-        """Lecture complète de l'état des relais (protégée par un lock async)."""
+
+class USBRelayCoordinator(DataUpdateCoordinator[list[int]]):
+    """Reads and writes the relay board over its serial port."""
+
+    config_entry: USBRelayConfigEntry
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: USBRelayConfigEntry,
+        port: str,
+        relay_count: int,
+    ) -> None:
+        """Initialize the coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=config_entry,
+            name=DOMAIN,
+            update_interval=None,
+        )
+        self.port = port
+        self.relay_count = relay_count
+        # Serialize every read/write on the serial port.
+        self._lock = asyncio.Lock()
+
+    async def _async_update_data(self) -> list[int]:
+        """Read the state of every relay."""
         async with self._lock:
             try:
-                state = await self.hass.async_add_executor_job(self._read_relays)
-                return state
-            except Exception as e:
-                raise UpdateFailed(f"Error reading relay state: {e}")
+                return await self.hass.async_add_executor_job(self._read_relays)
+            except (OSError, serial.SerialException) as err:
+                raise UpdateFailed(f"Error reading relay state: {err}") from err
+
+    async def async_switch(self, relay_idx: int, state: bool) -> None:
+        """Switch a relay, then publish the new state of the board."""
+        async with self._lock:
+            try:
+                await self.hass.async_add_executor_job(self._write_relay, relay_idx, state)
+                new_state = await self.hass.async_add_executor_job(self._read_relays)
+            except (OSError, serial.SerialException) as err:
+                raise HomeAssistantError(f"Error switching relay {relay_idx + 1}: {err}") from err
+        self.async_set_updated_data(new_state)
 
     def _read_relays(self) -> list[int]:
-        """Bloc IO synchrone (pas de lock asyncio ici)."""
-        with serial.Serial(self.port, 9600, timeout=0.5) as ser:
-            ser.write(bytes([0xFF]))
+        """Blocking read of the relay states."""
+        with serial.Serial(self.port, DEFAULT_BAUDRATE, timeout=SERIAL_TIMEOUT) as ser:
+            ser.write(READ_STATE_COMMAND)
             response = ser.read(self.relay_count)
 
         if len(response) != self.relay_count:
-            raise IOError(f"Expected {self.relay_count} bytes, got {len(response)}")
-        # Optionnel: valider que chaque octet est bien 0/1
+            raise OSError(f"Expected {self.relay_count} bytes, got {len(response)}")
         if any(b not in (0, 1) for b in response):
-            raise IOError(f"Invalid relay bytes: {list(response)}")
-
+            raise OSError(f"Invalid relay bytes: {list(response)}")
         return list(response)
 
-    async def async_switch(self, relay_idx: int, state: int):
-        """
-        Change l'état d'un relais puis publie immédiatement le nouvel état.
-        On reste sous le même lock pour éviter toute concurrence.
-        """
-        async with self._lock:
-            await self.hass.async_add_executor_job(self._write_relay, relay_idx, state)
-            new_state = await self.hass.async_add_executor_job(self._read_relays)
-            # Met à jour immédiatement les abonnés (entités) sans repasser par un cycle de refresh
-            self.async_set_updated_data(new_state)
-
-    def _write_relay(self, relay_idx: int, state: int):
-        """
-        Ecriture synchrone de la commande sur le port série.
-        Protocole: 0xA0, 0x0n, 0x0s, checksum
-        - n = numéro de relais (1..N)
-        - s = 1 (ON) ou 0 (OFF)
-        - checksum = (0xA0 + n + s) & 0xFF
-        """
-        relay_num = (relay_idx + 1) & 0xFF  # UI 0-based -> protocole 1-based
-        header = 0xA0
-        state_byte = 0x01 if state else 0x00
-        checksum = (header + relay_num + state_byte) & 0xFF
-        payload = bytes([header, relay_num, state_byte, checksum])
-
-        with serial.Serial(self.port, 9600, timeout=0.5) as ser:
-            ser.write(payload)
+    def _write_relay(self, relay_idx: int, state: bool) -> None:
+        """Blocking write of a switch command."""
+        with serial.Serial(self.port, DEFAULT_BAUDRATE, timeout=SERIAL_TIMEOUT) as ser:
+            ser.write(build_switch_command(relay_idx, state))

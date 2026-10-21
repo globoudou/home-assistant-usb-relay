@@ -1,13 +1,30 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Configure USB Relays",
-        "description": "Enter the serial port and number of relays.",
+      "select_port": {
+        "title": "Select the relay board",
+        "description": "Relay boards detected on the serial ports.",
         "data": {
-          "port": "Serial port (e.g., /dev/ttyUSB0)",
+          "port": "Serial port"
+        }
+      },
+      "confirm": {
+        "title": "Number of relays",
+        "description": "Board on {port}. Confirm how many relays it has.",
+        "data": {
           "relay_count": "Number of relays"
         }
+      }
+    },
+    "abort": {
+      "already_configured": "This relay board is already configured.",
+      "no_devices_found": "No USB relay board was found on the serial ports."
+    }
+  },
+  "entity": {
+    "switch": {
+      "relay": {
+        "name": "Relay {index}"
       }
     }
   }

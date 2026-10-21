@@ -1,46 +1,37 @@
+"""The USB Relay integration."""
+
 from __future__ import annotations
-import logging
-import os
-import serial.tools.list_ports
 
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN
-from .coordinator import USBRelayCoordinator
+from .const import CONF_PORT, CONF_RELAY_COUNT, DOMAIN
+from .coordinator import USBRelayConfigEntry, USBRelayCoordinator
+from .helpers import resolve_by_id
 
-_LOGGER = logging.getLogger(__name__)
+PLATFORMS: list[Platform] = [Platform.SWITCH]
 
-def resolve_by_id_path(port: str) -> str:
-    """Remplace /dev/ttyUSBx par le lien /dev/serial/by-id/... si possible."""
-    for port_info in serial.tools.list_ports.comports():
-        if port_info.device == port:
-            by_id_path = "/dev/serial/by-id"
-            if os.path.exists(by_id_path):
-                for entry in os.listdir(by_id_path):
-                    full_path = os.path.join(by_id_path, entry)
-                    if os.path.realpath(full_path) == os.path.realpath(port):
-                        return full_path
-    return port
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    return True
+async def async_setup_entry(hass: HomeAssistant, entry: USBRelayConfigEntry) -> bool:
+    """Set up a USB relay board from a config entry."""
+    if entry.unique_id is None and not any(
+        other.unique_id == entry.data[CONF_PORT]
+        for other in hass.config_entries.async_entries(DOMAIN)
+    ):
+        # Entries created before 1.3.2 have no unique ID.
+        hass.config_entries.async_update_entry(entry, unique_id=entry.data[CONF_PORT])
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # ✅ Copier les données (entry.data est en lecture seule)
-    data = dict(entry.data)
-    data["port"] = resolve_by_id_path(data["port"])
+    # Prefer the stable /dev/serial/by-id link over /dev/ttyUSBx.
+    port = await hass.async_add_executor_job(resolve_by_id, entry.data[CONF_PORT])
 
-    coordinator = USBRelayCoordinator(hass, data)
+    coordinator = USBRelayCoordinator(hass, entry, port, int(entry.data[CONF_RELAY_COUNT]))
     await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = coordinator
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
-
-    await hass.config_entries.async_forward_entry_setups(entry, ["switch"])
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    await hass.config_entries.async_unload_platforms(entry, ["switch"])
-    hass.data[DOMAIN].pop(entry.entry_id)
-    return True
+
+async def async_unload_entry(hass: HomeAssistant, entry: USBRelayConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
