@@ -26,11 +26,10 @@ already a dependency of Home Assistant.
 
 ## Installation
 
-### HACS
+### Marketplace
 
-1. In HACS, open the ⋮ menu → **Custom repositories**, add `https://github.com/globoudou/home-assistant-usb-relay` with the **Integration** type.
-2. Install **USB Relay**.
-3. Restart Home Assistant.
+1. Search & Install **USB Relay**.
+2. Restart Home Assistant.
 
 ### Manual
 
