@@ -20,6 +20,10 @@ The board uses a CH340 USB-to-serial chip at 9600 baud, 8N1, with a simple seria
 
 Home Assistant 2026.11 or later.
 
+The only Python library used is [pyserial](https://pypi.org/project/pyserial/). Home Assistant itself depends on it
+(`pyserial==3.5`), so it is not listed in the manifest `requirements`: hassfest rejects a requirement that is
+already a dependency of Home Assistant.
+
 ## Installation
 
 ### HACS
