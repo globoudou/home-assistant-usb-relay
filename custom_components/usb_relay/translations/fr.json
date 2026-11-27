@@ -1,9 +1,9 @@
 {
   "config": {
     "step": {
-      "select_port": {
-        "title": "Choisir la carte relais",
-        "description": "Cartes relais détectées sur les ports série.",
+      "user": {
+        "title": "Choisir le port série",
+        "description": "Choisissez le port série de la carte relais. Seul le port choisi est interrogé.",
         "data": {
           "port": "Port série"
         }
@@ -16,9 +16,13 @@
         }
       }
     },
+    "error": {
+      "cannot_connect": "Impossible d'ouvrir le port série.",
+      "not_a_relay_board": "Aucune carte relais USB n'a répondu sur ce port série."
+    },
     "abort": {
       "already_configured": "Cette carte relais est déjà configurée.",
-      "no_devices_found": "Aucune carte relais USB trouvée sur les ports série."
+      "no_devices_found": "Aucun port série trouvé. Branchez la carte relais et réessayez."
     }
   },
   "entity": {

@@ -4,47 +4,60 @@ from __future__ import annotations
 
 from typing import Any
 
+import serial
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
 from .const import CONF_PORT, CONF_RELAY_COUNT, DOMAIN, MAX_RELAY_COUNT
-from .helpers import detect_usb_relays
+from .helpers import list_serial_ports, probe_relay_board
 
 
 class USBRelayConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Detect a USB relay board and add it."""
+    """Add a USB relay board.
+
+    The serial ports are only listed, never opened, until the user has picked
+    one; only that port is then queried.
+    """
 
     VERSION = 1
 
     def __init__(self) -> None:
         """Initialize the flow."""
-        self._detected: dict[str, int] = {}
         self._port: str | None = None
+        self._relay_count = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Probe the serial ports for relay boards."""
-        detected = await self.hass.async_add_executor_job(detect_usb_relays)
+        """Let the user pick a serial port, then query that port only."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            port = user_input[CONF_PORT]
+            await self.async_set_unique_id(port)
+            self._abort_if_unique_id_configured()
+            try:
+                relay_count = await self.hass.async_add_executor_job(probe_relay_board, port)
+            except (OSError, serial.SerialException):
+                errors["base"] = "cannot_connect"
+            else:
+                if relay_count is None:
+                    errors["base"] = "not_a_relay_board"
+                else:
+                    self._port = port
+                    self._relay_count = relay_count
+                    return await self.async_step_confirm()
+
+        ports = await self.hass.async_add_executor_job(list_serial_ports)
         configured = self._async_current_ids(include_ignore=False)
-        self._detected = {port: count for port, count in detected.items() if port not in configured}
-        if not self._detected:
-            if detected:
+        available = {port: label for port, label in ports.items() if port not in configured}
+        if not available:
+            if ports:
                 return self.async_abort(reason="already_configured")
             return self.async_abort(reason="no_devices_found")
-        return await self.async_step_select_port()
-
-    async def async_step_select_port(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Let the user pick one of the detected boards."""
-        if user_input is not None:
-            self._port = user_input[CONF_PORT]
-            await self.async_set_unique_id(self._port)
-            self._abort_if_unique_id_configured()
-            return await self.async_step_confirm()
 
         return self.async_show_form(
-            step_id="select_port",
-            data_schema=vol.Schema({vol.Required(CONF_PORT): vol.In(list(self._detected))}),
+            step_id="user",
+            data_schema=vol.Schema({vol.Required(CONF_PORT): vol.In(available)}),
+            errors=errors,
         )
 
     async def async_step_confirm(
@@ -65,9 +78,9 @@ class USBRelayConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="confirm",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_RELAY_COUNT, default=self._detected.get(self._port, 1)
-                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=MAX_RELAY_COUNT))
+                    vol.Required(CONF_RELAY_COUNT, default=self._relay_count): vol.All(
+                        vol.Coerce(int), vol.Range(min=1, max=MAX_RELAY_COUNT)
+                    )
                 }
             ),
             description_placeholders={"port": self._port},

@@ -18,10 +18,16 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.usb_relay.const import DOMAIN
 from custom_components.usb_relay.helpers import (
     build_switch_command,
-    detect_usb_relays,
+    list_serial_ports,
+    probe_relay_board,
 )
 
 PORT = "/dev/ttyUSB0"
+OTHER_PORT = "/dev/ttyS0"
+COMPORTS = [
+    SimpleNamespace(device=OTHER_PORT, description="n/a", vid=None, pid=None),
+    SimpleNamespace(device=PORT, description="USB Serial", vid=0x1A86, pid=0x7523),
+]
 
 
 class FakeBoard:
@@ -85,19 +91,26 @@ def test_switch_command() -> None:
     assert build_switch_command(0, False) == bytes([0xA0, 0x01, 0x00, 0xA1])
 
 
-def test_detect(board: FakeBoard) -> None:
-    ports = [SimpleNamespace(device=PORT), SimpleNamespace(device="/dev/ttyS0")]
-
-    def fake_serial(port, *args, **kwargs):
-        if port != PORT:
-            raise serial.SerialException("not a relay")
-        return board.serial(port)
-
+def test_list_ports_does_not_open_them() -> None:
     with (
-        patch("serial.tools.list_ports.comports", return_value=ports),
-        patch("serial.Serial", side_effect=fake_serial),
+        patch("serial.tools.list_ports.comports", return_value=COMPORTS),
+        patch("serial.Serial") as mock_serial,
     ):
-        assert detect_usb_relays() == {PORT: 4}
+        ports = list_serial_ports()
+    mock_serial.assert_not_called()
+    # The CH340 adapter comes first.
+    assert ports == {PORT: f"{PORT} - USB Serial", OTHER_PORT: OTHER_PORT}
+
+
+def test_probe(board: FakeBoard) -> None:
+    assert probe_relay_board(PORT) == 4
+    assert board.writes == [b"\xff"]
+
+
+def test_probe_no_board() -> None:
+    silent = FakeBoard(relay_count=0)
+    with patch("serial.Serial", side_effect=silent.serial):
+        assert probe_relay_board(OTHER_PORT) is None
 
 
 async def test_setup_and_switch(hass: HomeAssistant, board: FakeBoard) -> None:
@@ -150,30 +163,69 @@ async def test_legacy_entry_gets_unique_id(hass: HomeAssistant, board: FakeBoard
     assert entry.unique_id == PORT
 
 
+def _patch_comports(ports=COMPORTS):
+    return patch("serial.tools.list_ports.comports", return_value=ports)
+
+
 async def test_config_flow(hass: HomeAssistant, board: FakeBoard) -> None:
-    with patch(
-        "custom_components.usb_relay.config_flow.detect_usb_relays",
-        return_value={PORT: 4},
-    ):
+    opened: list[str] = []
+
+    def tracking_serial(port, *args, **kwargs):
+        opened.append(port)
+        return board.serial(port)
+
+    with _patch_comports(), patch("serial.Serial", side_effect=tracking_serial):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "select_port"
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "user"
+        # Listing the ports must not open (or write to) any of them.
+        assert opened == []
 
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"port": PORT})
-    assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "confirm"
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"port": PORT})
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "confirm"
+        # Only the selected port has been queried.
+        assert opened == [PORT]
+        assert board.writes == [b"\xff"]
 
-    result = await hass.config_entries.flow.async_configure(result["flow_id"], {"relay_count": 4})
-    await hass.async_block_till_done()
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"relay_count": 4}
+        )
+        await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == {"port": PORT, "relay_count": 4}
     assert result["result"].unique_id == PORT
 
 
+async def test_config_flow_cannot_connect(hass: HomeAssistant, board: FakeBoard) -> None:
+    board.fail = True
+    with _patch_comports():
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"port": PORT})
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    assert result["errors"] == {"base": "cannot_connect"}
+
+
+async def test_config_flow_not_a_relay_board(hass: HomeAssistant) -> None:
+    silent = FakeBoard(relay_count=0)
+    with _patch_comports(), patch("serial.Serial", side_effect=silent.serial):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"port": OTHER_PORT}
+        )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "not_a_relay_board"}
+
+
 async def test_config_flow_no_device(hass: HomeAssistant) -> None:
-    with patch("custom_components.usb_relay.config_flow.detect_usb_relays", return_value={}):
+    with _patch_comports([]):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
@@ -183,12 +235,20 @@ async def test_config_flow_no_device(hass: HomeAssistant) -> None:
 
 async def test_config_flow_already_configured(hass: HomeAssistant, board: FakeBoard) -> None:
     await _setup(hass)
-    with patch(
-        "custom_components.usb_relay.config_flow.detect_usb_relays",
-        return_value={PORT: 4},
-    ):
+    with _patch_comports(COMPORTS[1:]):
         result = await hass.config_entries.flow.async_init(
             DOMAIN, context={"source": config_entries.SOURCE_USER}
         )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+async def test_config_flow_hides_configured_port(hass: HomeAssistant, board: FakeBoard) -> None:
+    await _setup(hass)
+    with _patch_comports():
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+    assert result["type"] is FlowResultType.FORM
+    schema = result["data_schema"].schema
+    assert list(schema["port"].container) == [OTHER_PORT]

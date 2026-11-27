@@ -12,7 +12,7 @@ The board uses a CH340 USB-to-serial chip at 9600 baud, 8N1, with a simple seria
 
 ## Features
 
-- Automatic detection of relay boards on the serial ports, with the number of relays.
+- Lists the serial ports without opening them; only the port you select is queried, and the number of relays is read from the board.
 - One `switch` entity per relay, grouped under a single device.
 - Uses the stable `/dev/serial/by-id/...` path when available, so the board survives USB re-enumeration.
 
@@ -36,7 +36,8 @@ Copy `custom_components/usb_relay/` into `config/custom_components/`, then resta
 
 1. Plug in the relay board.
 2. Go to **Settings → Devices & services → Add integration → USB Relay**.
-3. Pick the detected serial port and confirm the number of relays.
+3. Pick the serial port of the board (CH340 adapters are listed first). Only that port is queried, to check that a relay board answers and to read its number of relays.
+4. Confirm the number of relays.
 
 ## Protocol
 

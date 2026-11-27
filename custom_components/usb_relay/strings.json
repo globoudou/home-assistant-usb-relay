@@ -1,9 +1,9 @@
 {
   "config": {
     "step": {
-      "select_port": {
-        "title": "Select the relay board",
-        "description": "Relay boards detected on the serial ports.",
+      "user": {
+        "title": "Select the serial port",
+        "description": "Choose the serial port of the relay board. Only the selected port is queried.",
         "data": {
           "port": "Serial port"
         }
@@ -16,9 +16,13 @@
         }
       }
     },
+    "error": {
+      "cannot_connect": "Could not open the serial port.",
+      "not_a_relay_board": "No USB relay board answered on this serial port."
+    },
     "abort": {
       "already_configured": "This relay board is already configured.",
-      "no_devices_found": "No USB relay board was found on the serial ports."
+      "no_devices_found": "No serial port was found. Plug in the relay board and try again."
     }
   },
   "entity": {

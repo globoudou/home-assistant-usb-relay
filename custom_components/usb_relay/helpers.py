@@ -12,7 +12,13 @@ import os
 import serial
 import serial.tools.list_ports
 
-from .const import BY_ID_PATH, DEFAULT_BAUDRATE, MAX_RELAY_COUNT, SERIAL_TIMEOUT
+from .const import (
+    BY_ID_PATH,
+    CH340_USB_ID,
+    DEFAULT_BAUDRATE,
+    MAX_RELAY_COUNT,
+    SERIAL_TIMEOUT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,25 +56,33 @@ def build_switch_command(relay_idx: int, state: bool) -> bytes:
     return bytes([header, relay_num, state_byte, checksum])
 
 
-def detect_usb_relays() -> dict[str, int]:
-    """Probe every serial port and return {port: relay count} for relay boards."""
-    found: dict[str, int] = {}
-    for port_info in serial.tools.list_ports.comports():
-        try:
-            with serial.Serial(port_info.device, DEFAULT_BAUDRATE, timeout=SERIAL_TIMEOUT) as ser:
-                ser.write(READ_STATE_COMMAND)
-                response = ser.read(MAX_RELAY_COUNT)
-        except (OSError, serial.SerialException) as err:
-            _LOGGER.debug("Failed to probe %s: %s", port_info.device, err)
-            continue
+def list_serial_ports() -> dict[str, str]:
+    """Return {port: label} for every serial port, without opening any of them.
 
-        if is_valid_state(response):
-            port = resolve_by_id(port_info.device)
-            _LOGGER.debug(
-                "USB relay detected on %s (%s) with %d channels",
-                port_info.device,
-                port,
-                len(response),
-            )
-            found[port] = len(response)
-    return found
+    CH340 adapters (the chip used by these relay boards) are listed first.
+    """
+    ports: list[tuple[bool, str, str]] = []
+    for port_info in serial.tools.list_ports.comports():
+        port = resolve_by_id(port_info.device)
+        label = port
+        if port_info.description and port_info.description != "n/a":
+            label = f"{port} - {port_info.description}"
+        is_ch340 = (port_info.vid, port_info.pid) == CH340_USB_ID
+        ports.append((not is_ch340, port, label))
+    return {port: label for _, port, label in sorted(ports)}
+
+
+def probe_relay_board(port: str) -> int | None:
+    """Query one serial port and return its relay count, or None if no board answers.
+
+    Raises ``serial.SerialException`` / ``OSError`` if the port cannot be opened.
+    """
+    with serial.Serial(port, DEFAULT_BAUDRATE, timeout=SERIAL_TIMEOUT) as ser:
+        ser.write(READ_STATE_COMMAND)
+        response = ser.read(MAX_RELAY_COUNT)
+
+    if not is_valid_state(response):
+        _LOGGER.debug("No relay board answered on %s: %s", port, response.hex())
+        return None
+    _LOGGER.debug("USB relay board on %s with %d relays", port, len(response))
+    return len(response)
